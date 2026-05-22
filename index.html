@@ -762,7 +762,7 @@ function closeModal(type) { document.getElementById('modal-'+type).classList.add
 
 function selectMethod(method) {
   currentMethod = method;
-  const num = method==='nagad' ? (settings.nagadNumber||"01812345678") : method==='rocket' ? (settings.rocketNumber||"01912345678") : (settings.bkashNumber||"01712345678");
+  const num = method==='nagad' ? (settings.nagadNumber||"01357174049") : method==='rocket' ? (settings.rocketNumber||"01357174049") : (settings.bkashNumber||"01712345678");
   const depNum = document.getElementById('dep-num');
   const verNum = document.getElementById('ver-num');
   if(depNum) depNum.innerText = num;
@@ -783,7 +783,7 @@ function selectMethod(method) {
 }
 
 function copyPayNum() {
-  const num = currentMethod==='nagad' ? (settings.nagadNumber||"01812345678") : currentMethod==='rocket' ? (settings.rocketNumber||"01912345678") : (settings.bkashNumber||"01712345678");
+  const num = currentMethod==='nagad' ? (settings.nagadNumber||"01357174049") : currentMethod==='rocket' ? (settings.rocketNumber||"01912345678") : (settings.bkashNumber||"01712345678");
   navigator.clipboard.writeText(num).then(()=>showToast("নম্বর কপি হয়েছে: "+num));
 }
 

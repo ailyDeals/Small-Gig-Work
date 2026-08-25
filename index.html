@@ -18,14 +18,16 @@ import { getFirestore, doc, setDoc, getDoc, collection, query, where, onSnapshot
 import { getAuth, createUserWithEmailAndPassword, signInWithEmailAndPassword, signOut, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-auth.js";
 
 // ====== FIREBASE CONFIG — আপনার Firebase Project এর config এখানে দিন ======
-const firebaseConfig = {
-  apiKey: "AIzaSyXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX",
-  authDomain: "your-project.firebaseapp.com",
-  projectId: "your-project-id",
-  storageBucket: "your-project.appspot.com",
-  messagingSenderId: "000000000000",
-  appId: "1:000000000000:web:xxxxxxxxxxxxxxxx"
-};
+ const firebaseConfig = {
+    apiKey: "AIzaSyBoTCzjuZ4Z8O76m7FaoeiEUQSlh73HAnU",
+    authDomain: "ed-net-too.firebaseapp.com",
+    databaseURL: "https://ed-net-too-default-rtdb.firebaseio.com",
+    projectId: "ed-net-too",
+    storageBucket: "ed-net-too.firebasestorage.app",
+    messagingSenderId: "1015865016543",
+    appId: "1:1015865016543:web:45f3186980e43f57bae96a",
+    measurementId: "G-4HKLKWGFQW"
+  };
 // ==========================================================================
 
 const app = initializeApp(firebaseConfig);

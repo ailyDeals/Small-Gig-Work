@@ -44,6 +44,7 @@ let settings = getDefaultSettings();
 let currentMethod = "bkash";
 let historyFilter = "all";
 let isSpinning = false;
+let currentServiceId = null;
 let unsubListeners = [];
 
 function getDefaultSettings() {
@@ -246,7 +247,16 @@ async function onLoginSuccess() {
   document.getElementById('main-app').classList.remove('hidden');
   syncDashboard();
   listenUserData(currentUser.uid || currentUserData._uid);
-  navigateTab('home');
+  // Restore previous service view if user was mid-task (after returning from external link)
+  let restored = false;
+  try {
+    const sid = sessionStorage.getItem('sgw_current_service');
+    if(sid && currentUserData && currentUserData.verified) {
+      await openServiceView(sid);
+      restored = true;
+    }
+  } catch(e){}
+  if(!restored) navigateTab('home');
   setTimeout(()=>{ if(typeof lucide!=='undefined') lucide.createIcons(); },200);
 }
 
@@ -298,11 +308,31 @@ const SERVICES = [
   {id:"course",name:"Courses",icon:"book-open",color:"from-emerald-500 to-teal-600",desc:"ভিডিও কোর্স"},
   {id:"apps",name:"Premium Apps",icon:"layers",color:"from-orange-500 to-amber-600",desc:"সাবস্ক্রিপশন"},
   {id:"drive",name:"Drive Offer",icon:"hard-drive",color:"from-yellow-500 to-amber-600",desc:"ক্লাউড স্টোরেজ"},
+  {id:"videoads",name:"Video Ads",icon:"monitor-play",color:"from-rose-500 to-orange-500",desc:"এড দেখে আয় করুন"},
   {id:"spin",name:"Spin & Win",icon:"loader",color:"from-purple-600 to-pink-600",desc:"দৈনিক স্পিন"},
   {id:"leaderboard",name:"লিডারবোর্ড",icon:"trophy",color:"from-yellow-500 to-orange-500",desc:"শীর্ষ রেফারকারী"},
   {id:"salary",name:"Salary",icon:"award",color:"from-teal-600 to-emerald-700",desc:"মাসিক বেতন"},
   {id:"refer",name:"Refer Page",icon:"gift",color:"from-rose-500 to-pink-600",desc:"বন্ধু আমন্ত্রণ"},
 ];
+
+// Monetag Ad Links
+const MONETAG_ADS = [
+  "https://omg10.com/4/10646487",
+  "https://omg10.com/4/10646522"
+];
+function openMonetagAd() {
+  const url = MONETAG_ADS[Math.floor(Math.random() * MONETAG_ADS.length)];
+  window.open(url, "_blank");
+}
+
+window.openTaskLink = function(url) {
+  if(!url) return;
+  if(currentServiceId) {
+    try { sessionStorage.setItem('sgw_current_service', currentServiceId); } catch(e){}
+  }
+  window.open(url, "_blank", "noopener,noreferrer");
+  showToast("কাজ শেষ করে এই পেজে ফিরে এসে প্রুফ/তথ্য জমা দিন ✅","info");
+}
 
 async function renderServices() {
   const tasks = await dbGetUserTasks();
@@ -438,9 +468,12 @@ window.submitWithdraw = async function(e) {
 
 // ===== CHECKIN =====
 window.doCheckin = async function() {
+  if(!requireVerify()) return;
   const uid = currentUserData._uid||currentUser.uid;
   const today = new Date().toDateString();
   if(currentUserData.checkinLastDate===today){showToast("আজকের চেক-ইন ইতিমধ্যে হয়েছে!","error");return;}
+  // Monetag Ad দেখান চেক-ইনের আগে
+  openMonetagAd();
   const yesterday = new Date(Date.now()-86400000).toDateString();
   let streak = currentUserData.checkinStreak||0;
   if(currentUserData.checkinLastDate===yesterday) streak = Math.min(streak+1,7);
@@ -501,6 +534,7 @@ function renderSpinWheel(container) {
 
 window.doSpin = async function() {
   if(isSpinning) return;
+  if(!requireVerify()) return;
   const today = new Date().toLocaleDateString("bn-BD");
   if(currentUserData.spinDate===today){showToast("আজকের স্পিন হয়ে গেছে! আগামীকাল আসুন।","error");return;}
   const prizes=[5,10,20,30,50,5,10,100];
@@ -527,7 +561,10 @@ window.doSpin = async function() {
 
 // ===== SERVICE VIEW =====
 window.openServiceView = async function(id) {
+  if(!requireVerify()) return;
   const meta=SERVICES.find(m=>m.id===id); if(!meta)return;
+  currentServiceId = id;
+  try { sessionStorage.setItem('sgw_current_service', id); } catch(e){}
   document.getElementById('inner-name').innerText=meta.name;
   document.getElementById('inner-tag').innerText=meta.desc;
   document.querySelectorAll('.tab-view').forEach(t=>t.classList.add('hidden'));
@@ -539,6 +576,8 @@ window.openServiceView = async function(id) {
 }
 
 window.closeServiceView = function() {
+  currentServiceId = null;
+  try { sessionStorage.removeItem('sgw_current_service'); } catch(e){}
   document.getElementById('service-inner-tab').classList.add('hidden');
   navigateTab('home');
 }
@@ -546,20 +585,27 @@ window.closeServiceView = function() {
 function renderServiceCards(type, tasks) {
   const container=document.getElementById('service-cards'); container.innerHTML='';
   if(type==="spin"){renderSpinWheel(container);return;}
+  if(type==="videoads"){renderVideoAds(container);return;}
   const list=tasks.filter(t=>t.type===type);
   if(!list.length){container.innerHTML=`<div class="bg-purple-50 p-6 rounded-2xl text-center text-xs font-semibold text-purple-900 border border-purple-100">😢 এই সার্ভিসে এখন কোনো কাজ নেই।</div>`;return;}
   list.forEach(task=>{
     const card=document.createElement('div');
     card.className="bg-white border border-purple-100 p-4 rounded-2xl shadow-sm space-y-3";
     let actionHTML="";
+    let linkBtn="";
+    if(task.link){
+      linkBtn=`<button type="button" onclick="openTaskLink('${String(task.link).replace(/'/g,"\\'")}')" class="w-full bg-gradient-to-r from-blue-600 to-indigo-600 text-white font-bold py-2.5 rounded-xl text-[11px] cursor-pointer flex items-center justify-center gap-1.5"><i data-lucide="external-link" class="w-4 h-4"></i> 🔗 লিংক খুলুন / কাজ শুরু করুন</button>`;
+    }
     if(['gmail','facebook','instagram','tiktok'].includes(task.type)){
-      actionHTML=`<div class="pt-2 border-t border-purple-50 space-y-2"><span class="block font-bold text-[10px] text-slate-400">একাউন্ট তথ্য পূরণ করুন:</span><input type="text" id="acc-u-${task.id}" placeholder="মোবাইল / ইউজারনেম" class="w-full bg-slate-50 border border-purple-100 rounded-xl px-3 py-1.5 text-xs focus:outline-none"><input type="text" id="acc-p-${task.id}" placeholder="পাসওয়ার্ড" class="w-full bg-slate-50 border border-purple-100 rounded-xl px-3 py-1.5 text-xs focus:outline-none"><input type="text" id="acc-r-${task.id}" placeholder="রিকভারি / ২-ফ্যাক্টর কোড" class="w-full bg-slate-50 border border-purple-100 rounded-xl px-3 py-1.5 text-xs focus:outline-none"><button onclick="submitAccountTask('${task.id}')" class="w-full bg-purple-700 text-white font-bold py-2 rounded-xl text-[11px] cursor-pointer">তথ্য জমা দিন</button></div>`;
+      actionHTML=`<div class="pt-2 border-t border-purple-50 space-y-2">${linkBtn}<span class="block font-bold text-[10px] text-slate-400">একাউন্ট তথ্য পূরণ করুন:</span><input type="text" id="acc-u-${task.id}" placeholder="মোবাইল / ইউজারনেম" class="w-full bg-slate-50 border border-purple-100 rounded-xl px-3 py-1.5 text-xs focus:outline-none"><input type="text" id="acc-p-${task.id}" placeholder="পাসওয়ার্ড" class="w-full bg-slate-50 border border-purple-100 rounded-xl px-3 py-1.5 text-xs focus:outline-none"><input type="text" id="acc-r-${task.id}" placeholder="রিকভারি / ২-ফ্যাক্টর কোড" class="w-full bg-slate-50 border border-purple-100 rounded-xl px-3 py-1.5 text-xs focus:outline-none"><button onclick="submitAccountTask('${task.id}')" class="w-full bg-purple-700 text-white font-bold py-2 rounded-xl text-[11px] cursor-pointer">তথ্য জমা দিন</button></div>`;
     } else if(task.type==="typing"){
-      actionHTML=`<div class="pt-2 border-t border-purple-50 space-y-2"><div class="bg-slate-100 p-2.5 rounded-xl text-[10.5px] italic leading-normal select-all">${task.extraFields?.textToCopy||''}</div><textarea id="typed-${task.id}" rows="3" placeholder="উপরের লেখাটি এখানে টাইপ করুন..." class="w-full bg-slate-50 border border-purple-100 rounded-xl px-3 py-2 text-xs focus:outline-none"></textarea><button onclick="submitTypingTask('${task.id}')" class="w-full bg-purple-700 text-white font-bold py-2 rounded-xl text-[11px] cursor-pointer">টাইপিং জমা দিন</button></div>`;
+      actionHTML=`<div class="pt-2 border-t border-purple-50 space-y-2">${linkBtn}<div class="bg-slate-100 p-2.5 rounded-xl text-[10.5px] italic leading-normal select-all">${task.extraFields?.textToCopy||''}</div><textarea id="typed-${task.id}" rows="3" placeholder="উপরের লেখাটি এখানে টাইপ করুন..." class="w-full bg-slate-50 border border-purple-100 rounded-xl px-3 py-2 text-xs focus:outline-none"></textarea><button onclick="submitTypingTask('${task.id}')" class="w-full bg-purple-700 text-white font-bold py-2 rounded-xl text-[11px] cursor-pointer">টাইপিং জমা দিন</button></div>`;
     } else if(['microjob','drive','youtube','appinstall','survey','captcha'].includes(task.type)){
-      actionHTML=`<div class="pt-2 border-t border-purple-50 space-y-2"><input type="text" id="proof-${task.id}" placeholder="প্রুফ লিংক বা স্ক্রিনশট URL" class="w-full bg-slate-50 border border-purple-100 rounded-xl px-3 py-1.5 text-xs focus:outline-none"><button onclick="submitProofTask('${task.id}')" class="w-full bg-purple-700 text-white font-bold py-2 rounded-xl text-[11px] cursor-pointer">প্রুফ সাবমিট করুন</button></div>`;
+      actionHTML=`<div class="pt-2 border-t border-purple-50 space-y-2">${linkBtn}<input type="text" id="proof-${task.id}" placeholder="প্রুফ লিংক বা স্ক্রিনশট URL" class="w-full bg-slate-50 border border-purple-100 rounded-xl px-3 py-1.5 text-xs focus:outline-none"><button onclick="submitProofTask('${task.id}')" class="w-full bg-purple-700 text-white font-bold py-2 rounded-xl text-[11px] cursor-pointer">প্রুফ সাবমিট করুন</button></div>`;
     } else if(['course','apps'].includes(task.type)){
-      actionHTML=`<div class="pt-2 border-t border-purple-50"><button onclick="buyOffer('${task.id}')" class="w-full bg-amber-600 text-white font-bold py-2 rounded-xl text-[11px] cursor-pointer hover:bg-amber-700 flex items-center justify-center gap-1.5"><i data-lucide="shopping-cart" class="w-4 h-4"></i> এখনই কিনুন ৳${task.reward}</button></div>`;
+      actionHTML=`<div class="pt-2 border-t border-purple-50 space-y-2">${linkBtn}<button onclick="buyOffer('${task.id}')" class="w-full bg-amber-600 text-white font-bold py-2 rounded-xl text-[11px] cursor-pointer hover:bg-amber-700 flex items-center justify-center gap-1.5"><i data-lucide="shopping-cart" class="w-4 h-4"></i> এখনই কিনুন ৳${task.reward}</button></div>`;
+    } else {
+      actionHTML = linkBtn ? `<div class="pt-2 border-t border-purple-50 space-y-2">${linkBtn}</div>` : '';
     }
     const isBuy=['course','apps'].includes(task.type);
     card.innerHTML=`<div class="flex justify-between items-start"><span class="text-[9px] uppercase bg-purple-100 text-purple-700 font-extrabold px-2 py-0.5 rounded-full">${task.type}</span><span class="text-xs font-black ${isBuy?'text-amber-600':'text-emerald-600'} font-mono">${isBuy?'ক্রয়: ':'আয়: '}৳${task.reward}</span></div><div><h4 class="font-display font-extrabold text-xs text-purple-950">${task.title}</h4><p class="text-[10.5px] text-gray-400 mt-1 leading-normal">${task.description}</p></div>${actionHTML}`;
@@ -568,8 +614,66 @@ function renderServiceCards(type, tasks) {
   if(typeof lucide!=='undefined') lucide.createIcons();
 }
 
+function renderVideoAds(container) {
+  container.innerHTML = `
+    <div class="bg-white border border-purple-100 rounded-3xl p-5 shadow-sm text-center space-y-4">
+      <div class="w-14 h-14 mx-auto bg-gradient-to-br from-rose-500 to-orange-500 rounded-2xl flex items-center justify-center text-white shadow-lg">
+        <i data-lucide="monitor-play" class="w-7 h-7"></i>
+      </div>
+      <h4 class="font-display font-black text-sm text-purple-950">🎬 ভিডিও এড দেখে আয় করুন</h4>
+      <p class="text-[11px] text-gray-400 leading-relaxed">নিচের বাটনে ক্লিক করে এড দেখুন। এড দেখার পর “আয় ক্লেইম করুন” চাপুন। অ্যাডমিন যাচাই করে ব্যালেন্স দিবে।</p>
+      <div class="space-y-2.5">
+        <button onclick="watchVideoAd(1)" class="w-full bg-gradient-to-r from-rose-600 to-pink-500 text-white font-extrabold text-xs py-3.5 rounded-xl cursor-pointer flex items-center justify-center gap-2 shadow">
+          <i data-lucide="play-circle" class="w-5 h-5"></i> এড ১ দেখুন (Monetag)
+        </button>
+        <button onclick="watchVideoAd(2)" class="w-full bg-gradient-to-r from-orange-500 to-amber-500 text-white font-extrabold text-xs py-3.5 rounded-xl cursor-pointer flex items-center justify-center gap-2 shadow">
+          <i data-lucide="play-circle" class="w-5 h-5"></i> এড ২ দেখুন (Monetag)
+        </button>
+      </div>
+      <button id="claim-ad-btn" onclick="claimVideoAdReward()" class="w-full bg-gradient-to-r from-emerald-600 to-teal-500 text-white font-extrabold text-xs py-3 rounded-xl cursor-pointer opacity-50" disabled>
+        ✅ আয় ক্লেইম করুন (৳৫)
+      </button>
+      <p class="text-[10px] text-slate-400">প্রতিদিন সর্বোচ্চ ৫ বার এড দেখে আয় করতে পারবেন।</p>
+    </div>`;
+  if(typeof lucide!=='undefined') lucide.createIcons();
+}
+
+let adWatched = false;
+window.watchVideoAd = function(n) {
+  const url = n === 1 ? MONETAG_ADS[0] : MONETAG_ADS[1];
+  window.open(url, "_blank");
+  adWatched = true;
+  const btn = document.getElementById('claim-ad-btn');
+  if(btn){ btn.disabled = false; btn.style.opacity = '1'; }
+  showToast("এড ওপেন হয়েছে! দেখে এসে ক্লেইম করুন।","info");
+};
+
+window.claimVideoAdReward = async function() {
+  if(!adWatched){ showToast("আগে এড দেখুন!","error"); return; }
+  if(!requireVerify()) return;
+  const today = new Date().toLocaleDateString("bn-BD");
+  const uid = currentUserData._uid || currentUser.uid;
+  const txs = await dbGetUserTransactions(uid);
+  const todayAds = txs.filter(t => t.note && t.note.includes("Video Ad") && t.date === today);
+  if(todayAds.length >= 5){ showToast("আজকের এড লিমিট শেষ! আগামীকাল আসুন।","error"); return; }
+  await dbAddTransaction({
+    userId: uid, userSGWId: currentUserData.userId, userName: currentUserData.name,
+    type: 'earn', amount: 5, status: 'pending',
+    note: 'Video Ad দেখে আয়', details: { type: 'videoads' }
+  });
+  adWatched = false;
+  const btn = document.getElementById('claim-ad-btn');
+  if(btn){ btn.disabled = true; btn.style.opacity = '0.5'; }
+  showToast("আয় ক্লেইম সাবমিট হয়েছে! অ্যাডমিন অনুমোদন করবে।","success");
+  closeServiceView();
+};
+
 function requireVerify() {
-  if(!currentUserData.verified){showToast("কাজ সাবমিট করতে প্রথমে ভেরিফাই করুন!","error");openModal("verify");return false;}
+  if(!currentUserData || !currentUserData.verified){
+    showToast("কাজ করতে প্রথমে একাউন্ট ভেরিফাই করুন!","error");
+    openModal("verify");
+    return false;
+  }
   return true;
 }
 window.submitAccountTask = async function(taskId) {
@@ -587,10 +691,12 @@ window.submitTypingTask = async function(taskId) {
   if(!requireVerify())return;
   const typed=document.getElementById('typed-'+taskId)?.value.trim();
   if(!typed){showToast("লেখাটি টাইপ করুন","error");return;}
+  // Monetag Ad দেখান সাবমিটের আগে
+  openMonetagAd();
   const tasks=await dbGetUserTasks(); const task=tasks.find(t=>t.id===taskId);
   const uid=currentUserData._uid||currentUser.uid;
   await dbAddTransaction({userId:uid,userSGWId:currentUserData.userId,userName:currentUserData.name,type:'earn',amount:task.reward,status:'pending',note:task.title,details:{typedText:typed,taskId}});
-  showToast("টাইপিং জমা হয়েছে!");
+  showToast("টাইপিং জমা হয়েছে! এড দেখে এসেছেন।");
   closeServiceView();
 }
 window.submitProofTask = async function(taskId) {
@@ -697,6 +803,7 @@ async function renderSalary() {
   }
 }
 window.claimSalary = async function() {
+  if(!requireVerify()) return;
   const levels = settings.salaryLevels || getDefaultSettings().salaryLevels;
   const count = currentUserData.referCount||0;
   let monthly=0;
@@ -869,6 +976,26 @@ async function init() {
 }
 
 window.addEventListener('load', init);
+
+// When user returns from external task link / tab switch, keep them on the task submission page
+window.addEventListener('pageshow', function(ev) {
+  if(!currentUserData || !currentUserData.verified) return;
+  try {
+    const sid = sessionStorage.getItem('sgw_current_service');
+    if(sid && document.getElementById('service-inner-tab')?.classList.contains('hidden')) {
+      openServiceView(sid);
+    }
+  } catch(e){}
+});
+document.addEventListener('visibilitychange', function() {
+  if(document.visibilityState !== 'visible' || !currentUserData || !currentUserData.verified) return;
+  try {
+    const sid = sessionStorage.getItem('sgw_current_service');
+    if(sid && document.getElementById('service-inner-tab')?.classList.contains('hidden')) {
+      openServiceView(sid);
+    }
+  } catch(e){}
+});
 </script>
 <style>
 @keyframes marquee{0%{transform:translateX(100%)}100%{transform:translateX(-100%)}}
@@ -992,7 +1119,7 @@ window.addEventListener('load', init);
         <div class="bg-white border border-purple-100 p-3 rounded-2xl text-center shadow-sm"><p class="text-[9px] text-gray-400 font-bold uppercase">চেক-ইন</p><h4 id="stat-streak" class="font-display font-black text-sm text-amber-500 mt-0.5" style="font-family:'Sora',sans-serif">০ দিন</h4></div>
       </div>
       <div class="space-y-2 pt-1">
-        <div class="flex items-center justify-between"><h4 class="font-display font-black text-xs text-purple-950 uppercase tracking-wider" style="font-family:'Sora',sans-serif">সার্ভিস ক্যাটাগরি</h4><span class="text-[10px] bg-purple-100 text-purple-700 px-2 py-0.5 rounded-full font-bold">১৬ ক্যাটাগরি</span></div>
+        <div class="flex items-center justify-between"><h4 class="font-display font-black text-xs text-purple-950 uppercase tracking-wider" style="font-family:'Sora',sans-serif">সার্ভিস ক্যাটাগরি</h4><span class="text-[10px] bg-purple-100 text-purple-700 px-2 py-0.5 rounded-full font-bold">১৭ ক্যাটাগরি</span></div>
         <div class="grid grid-cols-3 gap-2.5" id="services-grid"></div>
       </div>
     </div>
